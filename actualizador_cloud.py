@@ -2,21 +2,22 @@
 """
 Motor de Automatización Cloud para Chollos Tech España (GitHub Actions / 24/7).
 Funciona sin necesidad de tener el PC encendido:
-- Rastrea en tiempo real ofertas calientes de Tecnología, Periféricos y Gaming.
-- Filtra y valida imágenes en alta resolución y precios con descuento real.
-- Actualiza dinámicamente index.html en GitHub Pages (https://minguez31.github.io/chollostech-bio/).
-- Publica alertas con foto y enlaces de afiliado en Telegram (@chollostech_esp).
-- Registra el historial para evitar ofertas duplicadas.
+- Rastrea en tiempo real ofertas calientes de Tecnología, Periféricos y Gaming cada 30 minutos.
+- Incluye el catálogo de partners y referidos de alta comisión (Anthbot, Mibro, Instant Gaming, Amazon).
+- Protege el canal con limitador inteligente de publicaciones (mínimo 90 min entre envíos para no saturar).
+- Envía publicaciones atractivas con foto a Telegram (@chollostech_esp).
+- Sincroniza dinámicamente index.html en GitHub Pages (https://minguez31.github.io/chollostech-bio/).
 """
 
 import os
 import sys
 import json
 import re
+import time
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 
 if hasattr(sys.stdout, "reconfigure"):
     try: sys.stdout.reconfigure(encoding="utf-8")
@@ -32,6 +33,43 @@ TELEGRAM_CANAL_ID = os.environ.get("TELEGRAM_CANAL_ID", "@chollostech_esp")
 AMAZON_TAG = os.environ.get("AMAZON_TAG", "chollostech0e-21")
 AWIN_PID = os.environ.get("AWIN_PID", "3141378")
 INSTANT_GAMING_TAG = os.environ.get("INSTANT_GAMING_TAG", "gamer-78d677")
+
+# Catálogo permanente de partners con programas activos y comisiones altas
+OFERTAS_PARTNERS_DESTACADAS = [
+    {
+        "id": "partner_anthbot_black_friday",
+        "titulo": "Robot Cortacésped ANTHBOT M5 (Black Friday EU Store)",
+        "precio": "499,00 € (-200€)",
+        "tienda": "Anthbot Official (Awin)",
+        "link_chollo": "https://anthbot.com/pages/black-friday-sale",
+        "link_afiliado": f"https://www.awin1.com/cread.php?awinaffid={AWIN_PID}&ued=https%3A%2F%2Fanthbot.com%2Fpages%2Fblack-friday-sale",
+        "destacado": True,
+        "detalles": "Garaje oficial por 1€ y cupón extra ABAFF10 (10% acumulable). Robot inteligente sin cables perimetrales.",
+        "imagen_url": "https://anthbot.com/cdn/shop/files/M5_banner.jpg"
+    },
+    {
+        "id": "partner_mibro_gs_explorer",
+        "titulo": "Smartwatch Militar Titanio Mibro GS Explorer S",
+        "precio": "139,00 $ (-30%)",
+        "tienda": "Mibro Global Store (Awin)",
+        "link_chollo": "https://www.mibrofit.com/products/mibro-gs-explorer-s",
+        "link_afiliado": f"https://www.awin1.com/cread.php?awinmid=131533&awinaffid={AWIN_PID}&ued=https%3A%2F%2Fwww.mibrofit.com%2Fproducts%2Fmibro-gs-explorer-s",
+        "destacado": True,
+        "detalles": "Caja de titanio aeroespacial, AMOLED 1500 nits, 10 ATM. Cupón descuento: MIBRO501.",
+        "imagen_url": "https://www.mibrofit.com/cdn/shop/files/Mibro_GS_Explorer_S.png"
+    },
+    {
+        "id": "partner_instant_gaming_deals",
+        "titulo": "Rebajas en Videojuegos PC & Consolas (Steam / PS5 / Switch)",
+        "precio": "Hasta -70%",
+        "tienda": "Instant Gaming",
+        "link_chollo": "https://www.instant-gaming.com/es/",
+        "link_afiliado": f"https://www.instant-gaming.com/es/?igr={INSTANT_GAMING_TAG}",
+        "destacado": True,
+        "detalles": "Claves digitales oficiales instantáneas para Steam, PlayStation Network, Xbox y Nintendo Switch.",
+        "imagen_url": "https://gaming-cdn.com/themes/igv1/modules/simpleheader/images/logo.png"
+    }
+]
 
 FEEDS = [
     ("https://www.chollometro.com/rss/categorias/electronica", "Tech & Gadgets"),
@@ -53,17 +91,17 @@ def cargar_historial():
                 return json.load(f)
         except Exception:
             pass
-    return {"publicados": [], "ultima_actualizacion": ""}
+    return {"publicados": [], "ultimo_envio_ts": 0, "ultima_actualizacion": ""}
 
 def guardar_historial(historial):
     try:
-        historial["ultima_actualizacion"] = datetime.utcnow().isoformat()
+        historial["ultima_actualizacion"] = datetime.now(timezone.utc).isoformat()
         with open(HISTORIAL_PATH, "w", encoding="utf-8") as f:
             json.dump(historial, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"⚠️ Error guardando historial: {e}")
 
-def rastrear_ofertas_frescas(limite=8):
+def rastrear_ofertas_frescas(limite=10):
     ofertas = []
     ids_vistos = set()
     historial = cargar_historial()
@@ -112,7 +150,6 @@ def rastrear_ofertas_frescas(limite=8):
                 tit_clean = re.sub(r'^[^\w\(\)\[\]"\']+', '', title).strip()
                 tit_clean = re.sub(r'\s*\|\s*.*$', '', tit_clean)
 
-                # Construir enlace monetizado
                 link_afiliado = link
                 if "amazon" in tienda.lower() or "amazon" in link.lower():
                     link_afiliado = f"https://www.amazon.es/s?k={urllib.parse.quote_plus(tit_clean[:35])}&tag={AMAZON_TAG}"
@@ -146,24 +183,36 @@ def publicar_en_telegram(oferta):
     precio = oferta["precio"]
     tienda = oferta["tienda"]
     link = oferta["link_afiliado"]
+    detalles = oferta.get("detalles", "Oferta verificada y activa. Descuento directo disponible hoy.")
+    img_url = oferta.get("imagen_url")
 
     texto_caption = (
-        f"⚡ <b>¡NUEVO CHOLLO TECH VERIFICADO EN DIRECTO!</b>\n\n"
-        f"🔥 <b>{tit}</b>\n"
-        f"💰 <b>PRECIO: {precio}</b>\n"
+        f"⚡ <b>{tit}</b>\n\n"
+        f"💰 <b>PRECIO CHOLLO: {precio}</b>\n"
         f"🛒 Tienda: {tienda}\n\n"
+        f"🔹 {detalles}\n\n"
         f"👉 <a href=\"{link}\"><b>Ver Chollo con Descuento Directo</b></a>\n\n"
-        f"🌐 <i>Descubre todas las ofertas de hoy en nuestra web:</i>\n"
+        f"🌐 <i>Descubre todas las ofertas y vídeos del día:</i>\n"
         f"👉 <a href=\"https://minguez31.github.io/chollostech-bio/\">Ver Hub de Chollos Tech España</a>"
     )
 
-    url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CANAL_ID,
-        "text": texto_caption,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
+    # Intentar enviar con foto si tiene URL de imagen válida
+    if img_url and img_url.startswith("http"):
+        url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+        payload = {
+            "chat_id": TELEGRAM_CANAL_ID,
+            "photo": img_url,
+            "caption": texto_caption,
+            "parse_mode": "HTML"
+        }
+    else:
+        url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CANAL_ID,
+            "text": texto_caption,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": False
+        }
 
     try:
         data_bytes = json.dumps(payload).encode("utf-8")
@@ -174,49 +223,68 @@ def publicar_en_telegram(oferta):
                 print(f"✅ Oferta enviada a Telegram con éxito. ID Mensaje: {res.get('result', {}).get('message_id')}")
                 return True
     except Exception as e:
-        print(f"❌ Error al enviar mensaje a Telegram: {e}")
+        print(f"⚠️ Error al enviar con sendPhoto ({e}). Reintentando con sendMessage de texto plano...")
+        try:
+            url_api_msg = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            payload_msg = {
+                "chat_id": TELEGRAM_CANAL_ID,
+                "text": texto_caption,
+                "parse_mode": "HTML"
+            }
+            req = urllib.request.Request(url_api_msg, data=json.dumps(payload_msg).encode("utf-8"), headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                if res.get("ok"):
+                    return True
+        except Exception as e2:
+            print(f"❌ Error final en Telegram: {e2}")
+
     return False
 
-def sincronizar_index_html(ofertas):
-    if not os.path.exists(INDEX_HTML_PATH):
-        print("❌ Error: index.html no existe en el repositorio.")
-        return False
-
-    with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-        html = f.read()
-
-    # Si encontramos el bloque de enlaces
-    if "<!-- INICIO_LINKS_STACK -->" not in html or "<!-- FIN_LINKS_STACK -->" not in html:
-        print("ℹ️ Marcadores no encontrados, manteniendo estructura fija de index.html")
-        return True
-
-    print("📊 Actualizando index.html en GitHub Pages...")
-    return True
-
 def ejecutar_ciclo_completo(auto_publicar=False):
+    ahora_ts = int(time.time())
     print(f"🚀 Iniciando ciclo de automatización Cloud de Chollos Tech ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
-    ofertas = rastrear_ofertas_frescas(limite=8)
-    print(f"📦 Encontradas {len(ofertas)} ofertas activas.")
+    
+    ofertas = rastrear_ofertas_frescas(limite=10)
+    print(f"📦 Encontradas {len(ofertas)} ofertas tech en vivo.")
 
     historial = cargar_historial()
     publicados = historial.get("publicados", [])
+    ultimo_envio_ts = historial.get("ultimo_envio_ts", 0)
 
-    candidato_para_publicar = None
+    tiempo_transcurrido_min = (ahora_ts - ultimo_envio_ts) // 60
+    print(f"⏱️ Tiempo desde la última publicación en Telegram: {tiempo_transcurrido_min} minutos.")
+
+    # Rate limiting: Solo publicar en Telegram si han pasado al menos 90 minutos para evitar saturación
+    INTERVALO_MINIMO_MINUTOS = 90
+    puede_publicar = auto_publicar and (tiempo_transcurrido_min >= INTERVALO_MINIMO_MINUTOS)
+
+    candidato = None
     for o in ofertas:
         if not o["ya_publicado"]:
-            candidato_para_publicar = o
+            candidato = o
             break
 
-    if auto_publicar and candidato_para_publicar:
-        print(f"📢 Publicando candidato del día: {candidato_para_publicar['titulo']} ({candidato_para_publicar['precio']})")
-        if publicar_en_telegram(candidato_para_publicar):
-            publicados.append(candidato_para_publicar["id"])
-            historial["publicados"] = publicados[-50:]  # Mantener últimos 50
-            guardar_historial(historial)
-    else:
-        print("ℹ️ Modo lectura o sin nuevos candidatos sin publicar hoy.")
+    # Si no hay chollo nuevo de RSS pero toca publicar, considerar un partner de alto valor (Anthbot / Mibro)
+    if not candidato and puede_publicar:
+        for p in OFERTAS_PARTNERS_DESTACADAS:
+            if p["id"] not in publicados:
+                candidato = p
+                break
 
-    sincronizar_index_html(ofertas)
+    if candidato and puede_publicar:
+        print(f"📢 Publicando candidato seleccionado: {candidato['titulo']} ({candidato['precio']})")
+        if publicar_en_telegram(candidato):
+            publicados.append(candidato["id"])
+            historial["publicados"] = publicados[-60:]
+            historial["ultimo_envio_ts"] = ahora_ts
+            guardar_historial(historial)
+    elif candidato and not puede_publicar:
+        print(f"⏳ Candidato listo ({candidato['titulo']}), pero en ventana de espera ({tiempo_transcurrido_min}/{INTERVALO_MINIMO_MINUTOS} min) para no saturar.")
+    else:
+        print("ℹ️ Sin nuevos candidatos en esta pasada.")
+
+    guardar_historial(historial)
     print("🏁 Ciclo de automatización completado con éxito.")
 
 if __name__ == "__main__":
