@@ -38,7 +38,7 @@ INSTANT_GAMING_TAG = os.environ.get("INSTANT_GAMING_TAG", "gamer-78d677")
 OFERTAS_PARTNERS_DESTACADAS = [
     {
         "id": "partner_anthbot_black_friday",
-        "titulo": "Robot Cortacésped ANTHBOT M5 (Black Friday EU Store)",
+        "titulo": "Robot Cortacésped ANTHBOT M5/M9 (Black Friday EU Store)",
         "precio": "499,00 € (-200€)",
         "tienda": "Anthbot Official (Awin)",
         "link_chollo": "https://anthbot.com/pages/black-friday-sale",
@@ -46,6 +46,17 @@ OFERTAS_PARTNERS_DESTACADAS = [
         "destacado": True,
         "detalles": "Garaje oficial por 1€ y cupón extra ABAFF10 (10% acumulable). Robot inteligente sin cables perimetrales.",
         "imagen_url": "https://anthbot.com/cdn/shop/files/M5_banner.jpg"
+    },
+    {
+        "id": "partner_razer_seiren_v3",
+        "titulo": "Micrófono Gaming Razer Seiren V3 Chroma (RGB Reactivo)",
+        "precio": "78,99 € (-28%)",
+        "tienda": "Amazon Prime",
+        "link_chollo": "https://www.amazon.es/dp/B0CNXKMSJG",
+        "link_afiliado": f"https://www.amazon.es/dp/B0CNXKMSJG?tag={AMAZON_TAG}",
+        "destacado": True,
+        "detalles": "Iluminación Chroma RGB reactiva a juegos/streams, sensor tap-to-mute superior y audio profesional.",
+        "imagen_url": "https://m.media-amazon.com/images/I/71qSkgxS7UL._AC_SL1500_.jpg"
     },
     {
         "id": "partner_mibro_gs_explorer",
@@ -152,7 +163,11 @@ def rastrear_ofertas_frescas(limite=10):
 
                 link_afiliado = link
                 if "amazon" in tienda.lower() or "amazon" in link.lower():
-                    link_afiliado = f"https://www.amazon.es/s?k={urllib.parse.quote_plus(tit_clean[:35])}&tag={AMAZON_TAG}"
+                    m_asin = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', link)
+                    if m_asin:
+                        link_afiliado = f"https://www.amazon.es/dp/{m_asin.group(1)}?tag={AMAZON_TAG}"
+                    else:
+                        link_afiliado = f"https://www.amazon.es/s?k={urllib.parse.quote_plus(tit_clean[:35])}&tag={AMAZON_TAG}"
 
                 item_obj = {
                     "id": deal_id,
@@ -255,8 +270,8 @@ def ejecutar_ciclo_completo(auto_publicar=False):
     tiempo_transcurrido_min = (ahora_ts - ultimo_envio_ts) // 60
     print(f"⏱️ Tiempo desde la última publicación en Telegram: {tiempo_transcurrido_min} minutos.")
 
-    # Rate limiting: Solo publicar en Telegram si han pasado al menos 90 minutos para evitar saturación
-    INTERVALO_MINIMO_MINUTOS = 90
+    # Rate limiting inteligente: Mínimo 60 min entre envíos para mantener ritmo constante sin saturar
+    INTERVALO_MINIMO_MINUTOS = 60
     puede_publicar = auto_publicar and (tiempo_transcurrido_min >= INTERVALO_MINIMO_MINUTOS)
 
     candidato = None
@@ -265,12 +280,14 @@ def ejecutar_ciclo_completo(auto_publicar=False):
             candidato = o
             break
 
-    # Si no hay chollo nuevo de RSS pero toca publicar, considerar un partner de alto valor (Anthbot / Mibro)
+    # Si no hay chollo nuevo de RSS pero toca publicar, rotar las ofertas partners destacadas (Anthbot, Razer, Mibro, Instant Gaming)
     if not candidato and puede_publicar:
         for p in OFERTAS_PARTNERS_DESTACADAS:
-            if p["id"] not in publicados:
+            if p["id"] not in publicados[-len(OFERTAS_PARTNERS_DESTACADAS):]:
                 candidato = p
                 break
+        if not candidato and OFERTAS_PARTNERS_DESTACADAS:
+            candidato = OFERTAS_PARTNERS_DESTACADAS[0]
 
     if candidato and puede_publicar:
         print(f"📢 Publicando candidato seleccionado: {candidato['titulo']} ({candidato['precio']})")

@@ -2,8 +2,8 @@ name: Chollos Tech 24/7 Cloud Automation & Bio Sync
 
 on:
   schedule:
-    # Rastreo continuo en la nube cada 30 minutos (de 08:00 a 23:59 hora española)
-    - cron: '*/30 7-22 * * *'
+    # Rastreo continuo en la nube cada 30 minutos en minutos con baja congestión (evita la saturación global de :00 y :30)
+    - cron: '14,44 6-22 * * *'
   workflow_dispatch:
     inputs:
       auto_publish:
