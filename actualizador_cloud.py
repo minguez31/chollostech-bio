@@ -33,7 +33,7 @@ TELEGRAM_CANAL_ID = os.environ.get("TELEGRAM_CANAL_ID", "@chollostech_esp")
 AMAZON_TAG = os.environ.get("AMAZON_TAG", "chollostech0e-21")
 AWIN_PID = os.environ.get("AWIN_PID", "3141378")
 INSTANT_GAMING_TAG = os.environ.get("INSTANT_GAMING_TAG", "gamer-78d677")
-TRADEDOUBLER_SITE_ID = os.environ.get("TRADEDOUBLER_SITE_ID", "")
+TRADEDOUBLER_SITE_ID = os.environ.get("TRADEDOUBLER_SITE_ID", "3508220")
 
 # Catálogo permanente de partners con programas activos y comisiones altas
 OFERTAS_PARTNERS_DESTACADAS = [
