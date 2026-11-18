@@ -33,6 +33,7 @@ TELEGRAM_CANAL_ID = os.environ.get("TELEGRAM_CANAL_ID", "@chollostech_esp")
 AMAZON_TAG = os.environ.get("AMAZON_TAG", "chollostech0e-21")
 AWIN_PID = os.environ.get("AWIN_PID", "3141378")
 INSTANT_GAMING_TAG = os.environ.get("INSTANT_GAMING_TAG", "gamer-78d677")
+TRADEDOUBLER_SITE_ID = os.environ.get("TRADEDOUBLER_SITE_ID", "")
 
 # Catálogo permanente de partners con programas activos y comisiones altas
 OFERTAS_PARTNERS_DESTACADAS = [
@@ -168,6 +169,9 @@ def rastrear_ofertas_frescas(limite=10):
                         link_afiliado = f"https://www.amazon.es/dp/{m_asin.group(1)}?tag={AMAZON_TAG}"
                     else:
                         link_afiliado = f"https://www.amazon.es/s?k={urllib.parse.quote_plus(tit_clean[:35])}&tag={AMAZON_TAG}"
+                elif "mediamarkt" in tienda.lower() or "mediamarkt" in link.lower():
+                    if TRADEDOUBLER_SITE_ID:
+                        link_afiliado = f"https://clk.tradedoubler.com/click?p=15610&a={TRADEDOUBLER_SITE_ID}&url={urllib.parse.quote(link, safe='')}"
 
                 item_obj = {
                     "id": deal_id,

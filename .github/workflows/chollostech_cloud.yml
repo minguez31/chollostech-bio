@@ -38,6 +38,7 @@ jobs:
           AMAZON_TAG: ${{ secrets.AMAZON_TAG }}
           AWIN_PID: ${{ secrets.AWIN_PID }}
           INSTANT_GAMING_TAG: ${{ secrets.INSTANT_GAMING_TAG }}
+          TRADEDOUBLER_SITE_ID: ${{ secrets.TRADEDOUBLER_SITE_ID }}
         run: |
           PUB_FLAG=""
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.auto_publish }}" = "true" ]; then
