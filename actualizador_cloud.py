@@ -274,8 +274,8 @@ def ejecutar_ciclo_completo(auto_publicar=False):
     tiempo_transcurrido_min = (ahora_ts - ultimo_envio_ts) // 60
     print(f"⏱️ Tiempo desde la última publicación en Telegram: {tiempo_transcurrido_min} minutos.")
 
-    # Rate limiting inteligente: Mínimo 60 min entre envíos para mantener ritmo constante sin saturar
-    INTERVALO_MINIMO_MINUTOS = 60
+    # Rate limiting inteligente: Mínimo 45 min entre envíos para mantener ritmo constante sin saturar
+    INTERVALO_MINIMO_MINUTOS = 45
     puede_publicar = auto_publicar and (tiempo_transcurrido_min >= INTERVALO_MINIMO_MINUTOS)
 
     candidato = None
