@@ -215,6 +215,19 @@ def publicar_en_telegram(oferta):
         f"👉 <a href=\"https://minguez31.github.io/chollostech-bio/\">Ver Hub de Chollos Tech España</a>"
     )
 
+    # Generar botones inline interactivos (Ver Chollo y Compartir con 1 clic)
+    share_text = urllib.parse.quote(f"🔥 ¡Mira este chollo en @chollostech_esp!\n{tit} por {precio}")
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(link)}&text={share_text}"
+
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "🛒 Ver Chollo en Tienda", "url": link},
+                {"text": "📲 Compartir chollo", "url": share_url}
+            ]
+        ]
+    }
+
     # Intentar enviar con foto si tiene URL de imagen válida
     if img_url and img_url.startswith("http"):
         url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -222,7 +235,8 @@ def publicar_en_telegram(oferta):
             "chat_id": TELEGRAM_CANAL_ID,
             "photo": img_url,
             "caption": texto_caption,
-            "parse_mode": "HTML"
+            "parse_mode": "HTML",
+            "reply_markup": reply_markup
         }
     else:
         url_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -230,7 +244,8 @@ def publicar_en_telegram(oferta):
             "chat_id": TELEGRAM_CANAL_ID,
             "text": texto_caption,
             "parse_mode": "HTML",
-            "disable_web_page_preview": False
+            "disable_web_page_preview": False,
+            "reply_markup": reply_markup
         }
 
     try:
