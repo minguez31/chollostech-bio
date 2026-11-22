@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://minguez31.github.io/chollostech-bio/sitemap.xml
