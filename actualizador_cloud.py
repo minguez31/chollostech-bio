@@ -4,9 +4,10 @@ Motor de Automatización Cloud para Chollos Tech España (GitHub Actions / 24/7)
 Funciona sin necesidad de tener el PC encendido:
 - Rastrea en tiempo real ofertas calientes de Tecnología, Periféricos y Gaming cada 30 minutos.
 - Incluye el catálogo de partners y referidos de alta comisión (Anthbot, Mibro, Instant Gaming, Amazon).
-- Protege el canal con limitador inteligente de publicaciones (mínimo 90 min entre envíos para no saturar).
+- Protege el canal con limitador inteligente de publicaciones (mínimo 45 min entre envíos para no saturar).
+- Resuelve las URLs directas de cada tienda (Amazon, PcComponentes, MediaMarkt, etc.) y aplica enlaces de afiliado propios.
+- Garantiza que NUNCA se publiquen enlaces originales de Chollometro en Telegram ni en la web.
 - Envía publicaciones atractivas con foto a Telegram (@chollostech_esp).
-- Sincroniza dinámicamente index.html en GitHub Pages (https://minguez31.github.io/chollostech-bio/).
 """
 
 import os
@@ -93,8 +94,117 @@ PALABRAS_CLAVE_TECH = [
     "dron", "drone", "garmin", "xiaomi", "samsung", "apple", "ps5",
     "switch", "nintendo", "xbox", "altavoz", "power bank", "proyector",
     "aspirador", "robot", "led", "rgb", "setup", "logitech", "razer",
-    "microfono", "micrófono", "webcam", "tablet", "steam deck", "rog ally"
+    "microfono", "micrófono", "webcam", "tablet", "steam deck", "rog ally",
+    "juego", "playstation", "grafica", "gráfica", "rtx", "ryzen", "intel",
+    "ssd", "nvme", "disco", "wifi", "router", "switch", "oled", "qled",
+    "consola", "mando", "controller", "tv", "pantalla", "cargador", "hub", "dock"
 ]
+
+class StopRedirect(Exception):
+    def __init__(self, target_url):
+        self.target_url = target_url
+
+class ResolverHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urllib.parse.urlparse(newurl)
+        qs = urllib.parse.parse_qs(parsed.query)
+        # 1. Parámetro 'url=' en pepper o path redirect
+        if 'url' in qs:
+            target = qs['url'][0]
+            if not 'chollometro.com' in target and not 'pepper.com' in target:
+                raise StopRedirect(target)
+        # 2. Si la URL ya apunta a la tienda externa directa
+        if not 'chollometro.com' in newurl and not 'pepper.com' in newurl and not 'awin1.com' in newurl and not 'clk.tradedoubler.com' in newurl:
+            raise StopRedirect(newurl)
+        # 3. Si es un redirect de red de afiliación previa con ued=
+        if 'ued' in qs:
+            raise StopRedirect(qs['ued'][0])
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+_resolver_opener = urllib.request.build_opener(ResolverHandler)
+
+def resolver_url_destino(deal_id_num):
+    if not deal_id_num:
+        return None
+    visit_url = f"https://www.chollometro.com/visit/threadmain/{deal_id_num}"
+    try:
+        req = urllib.request.Request(visit_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+        resp = _resolver_opener.open(req, timeout=7)
+        return resp.geturl()
+    except StopRedirect as sr:
+        return sr.target_url
+    except Exception:
+        return None
+
+def limpiar_url_base(u):
+    """Elimina query params de tracking y deja la URL limpia de producto."""
+    if not u or not u.startswith("http"):
+        return u
+    parsed = urllib.parse.urlparse(u)
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+
+def monetizar_enlace(raw_dest_url, tienda, titulo_clean):
+    """
+    Convierte cualquier URL de destino o tienda en enlace 100% monetizado para Samuel.
+    NUNCA devuelve un enlace a chollometro.com ni dominios de pepper.
+    """
+    dest = (raw_dest_url or "").strip()
+    dest_lower = dest.lower()
+    tienda_lower = (tienda or "").lower()
+
+    # Si es un acortador de Amazon (amzn.to o amzn.eu), expandir para extraer el ASIN
+    if "amzn.to" in dest_lower or "amzn.eu" in dest_lower:
+        try:
+            req_short = urllib.request.Request(dest, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req_short, timeout=6) as r:
+                dest = r.geturl()
+                dest_lower = dest.lower()
+        except Exception:
+            pass
+
+    # 1. AMAZON (Tag: chollostech0e-21)
+    if "amazon." in dest_lower or "amazon" in tienda_lower:
+        m_asin = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', dest)
+        if not m_asin:
+            m_asin = re.search(r'/([A-Z0-9]{10})(?:[/?#]|$)', dest)
+        if m_asin:
+            asin = m_asin.group(1)
+            return f"https://www.amazon.es/dp/{asin}?tag={AMAZON_TAG}"
+        else:
+            return f"https://www.amazon.es/s?k={urllib.parse.quote_plus(titulo_clean[:35])}&tag={AMAZON_TAG}"
+
+    # 2. PCCOMPONENTES (Awin merchant: 20981 | Publisher: AWIN_PID)
+    if "pccomponentes.com" in dest_lower or "pccomponentes" in tienda_lower:
+        clean_pc = limpiar_url_base(dest) if dest.startswith("http") else f"https://www.pccomponentes.com/buscar/?query={urllib.parse.quote_plus(titulo_clean[:30])}"
+        return f"https://www.awin1.com/cread.php?awinmid=20981&awinaffid={AWIN_PID}&ued={urllib.parse.quote(clean_pc, safe='')}"
+
+    # 3. MEDIAMARKT (TradeDoubler 15610 | Site ID: TRADEDOUBLER_SITE_ID)
+    if "mediamarkt.es" in dest_lower or "mediamarkt" in tienda_lower:
+        clean_mm = limpiar_url_base(dest) if dest.startswith("http") else f"https://www.mediamarkt.es/es/search.html?query={urllib.parse.quote_plus(titulo_clean[:30])}"
+        if TRADEDOUBLER_SITE_ID:
+            return f"https://clk.tradedoubler.com/click?p=15610&a={TRADEDOUBLER_SITE_ID}&url={urllib.parse.quote(clean_mm, safe='')}"
+        return clean_mm
+
+    # 4. INSTANT GAMING (Tag: INSTANT_GAMING_TAG)
+    if "instant-gaming.com" in dest_lower or "instant gaming" in tienda_lower:
+        if dest.startswith("http"):
+            parsed = urllib.parse.urlparse(dest)
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?igr={INSTANT_GAMING_TAG}"
+        return f"https://www.instant-gaming.com/es/?igr={INSTANT_GAMING_TAG}"
+
+    # 5. MIRAVIA (Awin merchant: 37166)
+    if "miravia.es" in dest_lower or "miravia" in tienda_lower:
+        clean_mv = limpiar_url_base(dest) if dest.startswith("http") else dest
+        return f"https://www.awin1.com/cread.php?awinmid=37166&awinaffid={AWIN_PID}&ued={urllib.parse.quote(clean_mv, safe='')}"
+
+    # 6. OTRAS TIENDAS DIRECTAS RECONOCIDAS (AliExpress, Nikon, LG, El Corte Inglés, Steam, etc.)
+    if dest.startswith("http") and "chollometro.com" not in dest_lower and "pepper.com" not in dest_lower:
+        return limpiar_url_base(dest)
+
+    # 7. Si no se pudo resolver el destino a tienda directa: RECHAZAR (NUNCA enlaces de chollometro)
+    return None
 
 def cargar_historial():
     if os.path.exists(HISTORIAL_PATH):
@@ -162,23 +272,21 @@ def rastrear_ofertas_frescas(limite=10):
                 tit_clean = re.sub(r'^[^\w\(\)\[\]"\']+', '', title).strip()
                 tit_clean = re.sub(r'\s*\|\s*.*$', '', tit_clean)
 
-                link_afiliado = link
-                if "amazon" in tienda.lower() or "amazon" in link.lower():
-                    m_asin = re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})', link)
-                    if m_asin:
-                        link_afiliado = f"https://www.amazon.es/dp/{m_asin.group(1)}?tag={AMAZON_TAG}"
-                    else:
-                        link_afiliado = f"https://www.amazon.es/s?k={urllib.parse.quote_plus(tit_clean[:35])}&tag={AMAZON_TAG}"
-                elif "mediamarkt" in tienda.lower() or "mediamarkt" in link.lower():
-                    if TRADEDOUBLER_SITE_ID:
-                        link_afiliado = f"https://clk.tradedoubler.com/click?p=15610&a={TRADEDOUBLER_SITE_ID}&url={urllib.parse.quote(link, safe='')}"
+                # Resolver enlace real hacia la tienda de destino (Amazon, PcComponentes, etc.)
+                deal_num = m_id.group(1) if m_id else None
+                dest_url = resolver_url_destino(deal_num) if deal_num else None
+                link_afiliado = monetizar_enlace(dest_url, tienda, tit_clean)
+
+                # FILTRO DE SEGURIDAD ESTRICTO: Descartar si no hay enlace o si contiene Chollometro
+                if not link_afiliado or "chollometro.com" in link_afiliado.lower() or "pepper.com" in link_afiliado.lower():
+                    continue
 
                 item_obj = {
                     "id": deal_id,
                     "titulo": tit_clean[:65],
                     "precio": precio,
                     "tienda": tienda,
-                    "link_chollo": link,
+                    "link_chollo": dest_url or link_afiliado,
                     "link_afiliado": link_afiliado,
                     "imagen_url": img_url,
                     "ya_publicado": deal_id in publicados_previos
@@ -201,7 +309,13 @@ def publicar_en_telegram(oferta):
     tit = oferta["titulo"]
     precio = oferta["precio"]
     tienda = oferta["tienda"]
-    link = oferta["link_afiliado"]
+    link = oferta.get("link_afiliado", "")
+
+    # BARRERA DE SEGURIDAD ABSOLUTA: Prohibido enviar enlaces a Chollometro o dominios asociados
+    if not link or "chollometro.com" in link.lower() or "pepper.com" in link.lower():
+        print(f"🛑 RECHAZADO: El enlace '{link}' no es válido o apunta a Chollometro. Se cancela el envío.")
+        return False
+
     detalles = oferta.get("detalles", "Oferta verificada y activa. Descuento directo disponible hoy.")
     img_url = oferta.get("imagen_url")
 
@@ -280,7 +394,7 @@ def ejecutar_ciclo_completo(auto_publicar=False):
     print(f"🚀 Iniciando ciclo de automatización Cloud de Chollos Tech ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})...")
     
     ofertas = rastrear_ofertas_frescas(limite=10)
-    print(f"📦 Encontradas {len(ofertas)} ofertas tech en vivo.")
+    print(f"📦 Encontradas {len(ofertas)} ofertas tech monetizadas y verificadas.")
 
     historial = cargar_historial()
     publicados = historial.get("publicados", [])
